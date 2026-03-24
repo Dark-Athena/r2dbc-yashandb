@@ -1,0 +1,32 @@
+# Maven build output
+target/
+
+# IDE - IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# IDE - Eclipse
+.classpath
+.project
+.settings/
+
+# IDE - VS Code
+.vscode/
+
+# IDE - codebuddy
+.codebuddy/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Test database config (contains credentials, do not commit)
+src/test/resources/test-database.properties
+
+
+lib/
