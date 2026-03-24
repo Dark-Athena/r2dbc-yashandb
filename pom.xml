@@ -21,7 +21,7 @@
 
         <r2dbc-spi.version>1.0.0.RELEASE</r2dbc-spi.version>
         <reactor-core.version>3.6.4</reactor-core.version>
-        <yashandb-jdbc.version>1.10.2</yashandb-jdbc.version>
+        <yashandb-jdbc.version>1.9.3</yashandb-jdbc.version>
 
         <!-- test -->
         <junit.version>5.10.2</junit.version>

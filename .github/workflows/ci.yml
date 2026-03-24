@@ -23,21 +23,38 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Install YashanDB JDBC driver
-        env:
-          YASHANDB_JDBC_JAR_BASE64: ${{ secrets.YASHANDB_JDBC_JAR_BASE64 }}
+      - name: Download and install YashanDB JDBC driver
         run: |
-          echo "$YASHANDB_JDBC_JAR_BASE64" | base64 -d > yashandb-jdbc.jar
+          curl -fsSL https://linked.yashandb.com/upload1010/yashandb-jdbc-1.9.3.jar \
+            -o yashandb-jdbc.jar
           mvn install:install-file \
             -Dfile=yashandb-jdbc.jar \
             -DgroupId=com.yashandb \
             -DartifactId=yashandb-jdbc \
-            -Dversion=1.10.2 \
+            -Dversion=1.9.3 \
             -Dpackaging=jar \
             -q
 
-      - name: Run unit tests
+      - name: Start YashanDB
+        run: |
+          docker pull yasdb/yashandb:23.4.7.100
+          docker run -d -p 1688:1688 -e SYS_PASSWD=Enmo_123 --name yashandb yasdb/yashandb:23.4.7.100
+
+      - name: Wait for YashanDB to be ready
+        run: |
+          echo "Waiting for YashanDB to be ready..."
+          for i in $(seq 1 30); do
+            if nc -z localhost 1688 2>/dev/null; then
+              echo "YashanDB is ready after $((i * 10)) seconds."
+              break
+            fi
+            echo "  attempt $i/30 — not ready yet, waiting 10s..."
+            sleep 10
+          done
+          nc -z localhost 1688 || { echo "YashanDB did not start in time"; exit 1; }
+
+      - name: Run all tests
         run: |
           mvn -B test \
-            -Dtest='!IntegrationTest' \
+            -Ddb.password=Enmo_123 \
             --no-transfer-progress
