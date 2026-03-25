@@ -7,7 +7,7 @@
 | 组件 | 版本 |
 |------|------|
 | Java | 17+ |
-| YashanDB JDBC | 1.10.2 |
+| YashanDB JDBC | 1.9.3+ |
 | R2DBC SPI | 1.0.0.RELEASE |
 | Reactor Core | 3.6.x |
 
@@ -17,10 +17,10 @@
 
 ```bash
 mvn install:install-file \
-  -Dfile=yashandb-jdbc-1.10.2.jar \
+  -Dfile=yashandb-jdbc-1.9.3.jar \
   -DgroupId=com.yashandb \
   -DartifactId=yashandb-jdbc \
-  -Dversion=1.10.2 \
+  -Dversion=1.9.3 \
   -Dpackaging=jar
 ```
 
