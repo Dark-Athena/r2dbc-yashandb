@@ -7,24 +7,13 @@
 | 组件 | 版本 |
 |------|------|
 | Java | 17+ |
-| YashanDB JDBC | 1.9.3+ |
+| YashanDB JDBC | 1.9.24 |
 | R2DBC SPI | 1.0.0.RELEASE |
 | Reactor Core | 3.6.x |
 
 ## 安装
 
-### 1. 安装 YashanDB JDBC 到本地 Maven 仓库
-
-```bash
-mvn install:install-file \
-  -Dfile=yashandb-jdbc-1.9.3.jar \
-  -DgroupId=com.yashandb \
-  -DartifactId=yashandb-jdbc \
-  -Dversion=1.9.3 \
-  -Dpackaging=jar
-```
-
-### 2. 添加依赖
+### 添加依赖
 
 ```xml
 <dependency>
