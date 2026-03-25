@@ -42,16 +42,43 @@ jobs:
 
       - name: Wait for YashanDB to be ready
         run: |
-          echo "Waiting for YashanDB to be ready..."
+          # Phase 1: wait for the TCP port to open
+          echo "Waiting for YashanDB port 1688 to open..."
           for i in $(seq 1 30); do
             if nc -z localhost 1688 2>/dev/null; then
-              echo "YashanDB is ready after $((i * 10)) seconds."
+              echo "Port 1688 is open after $(((i - 1) * 10)) seconds."
               break
             fi
-            echo "  attempt $i/30 — not ready yet, waiting 10s..."
+            echo "  attempt $i/30 — port not open yet, waiting 10s..."
             sleep 10
           done
-          nc -z localhost 1688 || { echo "YashanDB did not start in time"; exit 1; }
+          nc -z localhost 1688 || { echo "YashanDB did not bind to port in time"; exit 1; }
+
+          # Phase 2: probe with a real JDBC connection (port open != DB ready)
+          cat > /tmp/YashanProbe.java << 'JAVA'
+          import java.sql.*;
+          public class YashanProbe {
+              public static void main(String[] args) throws Exception {
+                  DriverManager.setLoginTimeout(5);
+                  try (Connection c = DriverManager.getConnection(
+                          "jdbc:yasdb://localhost:1688/", "sys", "Enmo_123")) {
+                      System.out.println("JDBC connection successful.");
+                  }
+              }
+          }
+          JAVA
+          javac -cp yashandb-jdbc.jar /tmp/YashanProbe.java -d /tmp/
+          echo "Probing JDBC connection..."
+          for i in $(seq 1 30); do
+            if java -cp "yashandb-jdbc.jar:/tmp" YashanProbe 2>/dev/null; then
+              echo "YashanDB JDBC is ready after $(((i - 1) * 10)) extra seconds."
+              break
+            fi
+            echo "  JDBC attempt $i/30 — DB not accepting connections yet, waiting 10s..."
+            sleep 10
+          done
+          java -cp "yashandb-jdbc.jar:/tmp" YashanProbe \
+            || { echo "YashanDB is not accepting JDBC connections after 5 minutes"; exit 1; }
 
       - name: Run all tests
         run: |
