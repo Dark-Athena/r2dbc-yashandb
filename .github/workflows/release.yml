@@ -27,18 +27,6 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Download and install YashanDB JDBC driver
-        run: |
-          curl -fsSL https://linked.yashandb.com/upload1010/yashandb-jdbc-1.9.3.jar \
-            -o yashandb-jdbc.jar
-          mvn install:install-file \
-            -Dfile=yashandb-jdbc.jar \
-            -DgroupId=com.yashandb \
-            -DartifactId=yashandb-jdbc \
-            -Dversion=1.9.3 \
-            -Dpackaging=jar \
-            -q
-
       - name: Set version
         env:
           RELEASE_VERSION: ${{ inputs.version }}

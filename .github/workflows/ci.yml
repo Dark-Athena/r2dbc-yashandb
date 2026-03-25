@@ -23,17 +23,8 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Download and install YashanDB JDBC driver
-        run: |
-          curl -fsSL https://linked.yashandb.com/upload1010/yashandb-jdbc-1.9.3.jar \
-            -o yashandb-jdbc.jar
-          mvn install:install-file \
-            -Dfile=yashandb-jdbc.jar \
-            -DgroupId=com.yashandb \
-            -DartifactId=yashandb-jdbc \
-            -Dversion=1.9.3 \
-            -Dpackaging=jar \
-            -q
+      - name: Resolve Maven dependencies
+        run: mvn -B dependency:resolve -q --no-transfer-progress
 
       - name: Start YashanDB
         run: |
@@ -42,6 +33,8 @@ jobs:
 
       - name: Wait for YashanDB to be ready
         run: |
+          JDBC_VERSION=$(mvn help:evaluate -Dexpression=yashandb-jdbc.version -q -DforceStdout --no-transfer-progress)
+          JDBC_JAR=$HOME/.m2/repository/com/yashandb/yashandb-jdbc/$JDBC_VERSION/yashandb-jdbc-$JDBC_VERSION.jar
           # Phase 1: wait for the TCP port to open
           echo "Waiting for YashanDB port 1688 to open..."
           for i in $(seq 1 30); do
@@ -67,17 +60,17 @@ jobs:
               }
           }
           JAVA
-          javac -cp yashandb-jdbc.jar /tmp/YashanProbe.java -d /tmp/
+          javac -cp "$JDBC_JAR" /tmp/YashanProbe.java -d /tmp/
           echo "Probing JDBC connection..."
           for i in $(seq 1 30); do
-            if java -cp "yashandb-jdbc.jar:/tmp" YashanProbe 2>/dev/null; then
+            if java -cp "$JDBC_JAR:/tmp" YashanProbe 2>/dev/null; then
               echo "YashanDB JDBC is ready after $(((i - 1) * 10)) extra seconds."
               break
             fi
             echo "  JDBC attempt $i/30 — DB not accepting connections yet, waiting 10s..."
             sleep 10
           done
-          java -cp "yashandb-jdbc.jar:/tmp" YashanProbe \
+          java -cp "$JDBC_JAR:/tmp" YashanProbe \
             || { echo "YashanDB is not accepting JDBC connections after 5 minutes"; exit 1; }
 
       - name: Run all tests
