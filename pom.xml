@@ -21,7 +21,7 @@
 
         <r2dbc-spi.version>1.0.0.RELEASE</r2dbc-spi.version>
         <reactor-core.version>3.6.4</reactor-core.version>
-        <yashandb-jdbc.version>1.9.3</yashandb-jdbc.version>
+        <yashandb-jdbc.version>1.9.24</yashandb-jdbc.version>
 
         <!-- test -->
         <junit.version>5.10.2</junit.version>
@@ -45,11 +45,12 @@
             <version>${reactor-core.version}</version>
         </dependency>
 
-        <!-- YashanDB JDBC (local Maven repo) -->
+        <!-- YashanDB JDBC -->
         <dependency>
             <groupId>com.yashandb</groupId>
             <artifactId>yashandb-jdbc</artifactId>
             <version>${yashandb-jdbc.version}</version>
+            <scope>compile</scope>
         </dependency>
 
         <!-- Logging (SLF4J API only; implementation provided at runtime) -->
