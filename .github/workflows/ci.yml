@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ "**" ]
+
+jobs:
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Download and install YashanDB JDBC driver
+        run: |
+          curl -fsSL https://linked.yashandb.com/upload1010/yashandb-jdbc-1.9.3.jar \
+            -o yashandb-jdbc.jar
+          mvn install:install-file \
+            -Dfile=yashandb-jdbc.jar \
+            -DgroupId=com.yashandb \
+            -DartifactId=yashandb-jdbc \
+            -Dversion=1.9.3 \
+            -Dpackaging=jar \
+            -q
+
+      - name: Start YashanDB
+        run: |
+          docker pull yasdb/yashandb:23.4.7.100
+          docker run -d -p 1688:1688 -e SYS_PASSWD=Enmo_123 --name yashandb yasdb/yashandb:23.4.7.100
+
+      - name: Wait for YashanDB to be ready
+        run: |
+          # Phase 1: wait for the TCP port to open
+          echo "Waiting for YashanDB port 1688 to open..."
+          for i in $(seq 1 30); do
+            if nc -z localhost 1688 2>/dev/null; then
+              echo "Port 1688 is open after $(((i - 1) * 10)) seconds."
+              break
+            fi
+            echo "  attempt $i/30 — port not open yet, waiting 10s..."
+            sleep 10
+          done
+          nc -z localhost 1688 || { echo "YashanDB did not bind to port in time"; exit 1; }
+
+          # Phase 2: probe with a real JDBC connection (port open != DB ready)
+          cat > /tmp/YashanProbe.java << 'JAVA'
+          import java.sql.*;
+          public class YashanProbe {
+              public static void main(String[] args) throws Exception {
+                  DriverManager.setLoginTimeout(5);
+                  try (Connection c = DriverManager.getConnection(
+                          "jdbc:yasdb://localhost:1688/", "sys", "Enmo_123")) {
+                      System.out.println("JDBC connection successful.");
+                  }
+              }
+          }
+          JAVA
+          javac -cp yashandb-jdbc.jar /tmp/YashanProbe.java -d /tmp/
+          echo "Probing JDBC connection..."
+          for i in $(seq 1 30); do
+            if java -cp "yashandb-jdbc.jar:/tmp" YashanProbe 2>/dev/null; then
+              echo "YashanDB JDBC is ready after $(((i - 1) * 10)) extra seconds."
+              break
+            fi
+            echo "  JDBC attempt $i/30 — DB not accepting connections yet, waiting 10s..."
+            sleep 10
+          done
+          java -cp "yashandb-jdbc.jar:/tmp" YashanProbe \
+            || { echo "YashanDB is not accepting JDBC connections after 5 minutes"; exit 1; }
+
+      - name: Run all tests
+        run: |
+          mvn -B test \
+            -Ddb.password=Enmo_123 \
+            --no-transfer-progress
