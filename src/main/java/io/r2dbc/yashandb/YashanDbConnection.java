@@ -36,13 +36,16 @@ public final class YashanDbConnection implements Connection {
 
     private final java.sql.Connection jdbcConnection;
     private final YashanDbConnectionConfiguration configuration;
+    private final YashanDbConnectionMetadata connectionMetadata;
     private final AtomicBoolean closed = new AtomicBoolean(false);
     /** Savepoint name -> JDBC Savepoint object, for rollback-to-savepoint support. */
     private final Map<String, Savepoint> savepoints = new HashMap<>();
 
-    private YashanDbConnection(java.sql.Connection jdbcConnection, YashanDbConnectionConfiguration configuration) {
+    private YashanDbConnection(java.sql.Connection jdbcConnection, YashanDbConnectionConfiguration configuration,
+                               YashanDbConnectionMetadata connectionMetadata) {
         this.jdbcConnection = jdbcConnection;
         this.configuration = configuration;
+        this.connectionMetadata = connectionMetadata;
     }
 
     /**
@@ -75,7 +78,8 @@ public final class YashanDbConnection implements Connection {
         java.sql.Connection jdbcConn = DriverManager.getConnection(url, props);
         // Disable auto-commit by default so that R2DBC transaction semantics apply
         jdbcConn.setAutoCommit(true);
-        return new YashanDbConnection(jdbcConn, configuration);
+        YashanDbConnectionMetadata metadata = YashanDbConnectionMetadata.fromJdbc(jdbcConn.getMetaData());
+        return new YashanDbConnection(jdbcConn, configuration, metadata);
     }
 
     // -------------------------------------------------------------------------
@@ -313,7 +317,7 @@ public final class YashanDbConnection implements Connection {
 
     @Override
     public ConnectionMetadata getMetadata() {
-        return YashanDbConnectionMetadata.INSTANCE;
+        return connectionMetadata;
     }
 
     @Override
