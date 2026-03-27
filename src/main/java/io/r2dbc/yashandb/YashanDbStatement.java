@@ -318,12 +318,69 @@ public final class YashanDbStatement implements Statement {
 
     private PreparedStatement prepareStatement() throws SQLException {
         java.sql.Connection jdbcConn = connection.getJdbcConnection();
+        String jdbcSql = convertToJdbcSql(sql);
         if (returnGeneratedValues && generatedColumns != null && generatedColumns.length > 0) {
-            return jdbcConn.prepareStatement(sql, generatedColumns);
+            return jdbcConn.prepareStatement(jdbcSql, generatedColumns);
         } else if (returnGeneratedValues) {
-            return jdbcConn.prepareStatement(sql, java.sql.Statement.RETURN_GENERATED_KEYS);
+            return jdbcConn.prepareStatement(jdbcSql, java.sql.Statement.RETURN_GENERATED_KEYS);
         }
-        return jdbcConn.prepareStatement(sql);
+        return jdbcConn.prepareStatement(jdbcSql);
+    }
+
+    /**
+     * Convert a SQL string with R2DBC-style {@code :name} named-parameter placeholders
+     * into a JDBC-compatible SQL string where every named placeholder is replaced by
+     * {@code ?}.  Positional {@code ?} placeholders and text inside string literals are
+     * left unchanged.
+     *
+     * <p>This conversion is necessary because JDBC drivers do not understand
+     * {@code :name} syntax — they require positional {@code ?} markers.  Without this
+     * conversion the driver would receive the raw parameter name in the SQL text,
+     * causing it to embed the literal string in the query instead of using a true
+     * server-side bind variable.</p>
+     */
+    static String convertToJdbcSql(String sql) {
+        StringBuilder result = new StringBuilder(sql.length());
+        int i = 0;
+        while (i < sql.length()) {
+            char c = sql.charAt(i);
+            // Skip string literals, preserving their content verbatim.
+            // Handles the SQL standard escaped-quote form '' (two consecutive quotes).
+            if (c == '\'' || c == '"') {
+                char quote = c;
+                result.append(c);
+                i++;
+                while (i < sql.length()) {
+                    char s = sql.charAt(i);
+                    result.append(s);
+                    i++;
+                    if (s == quote) {
+                        // Check for escaped quote ('' or "")
+                        if (i < sql.length() && sql.charAt(i) == quote) {
+                            // escaped quote — consume and continue inside the literal
+                            result.append(sql.charAt(i));
+                            i++;
+                        } else {
+                            // real closing quote
+                            break;
+                        }
+                    }
+                }
+                continue;
+            }
+            // Replace :name with ?
+            if (c == ':' && i + 1 < sql.length() && Character.isLetter(sql.charAt(i + 1))) {
+                result.append('?');
+                i++; // skip ':'
+                while (i < sql.length() && (Character.isLetterOrDigit(sql.charAt(i)) || sql.charAt(i) == '_')) {
+                    i++;
+                }
+                continue;
+            }
+            result.append(c);
+            i++;
+        }
+        return result.toString();
     }
 
     private void bindParameters(PreparedStatement ps, Map<Integer, Object> params) throws SQLException {

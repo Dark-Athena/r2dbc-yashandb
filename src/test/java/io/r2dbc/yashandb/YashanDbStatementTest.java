@@ -134,6 +134,79 @@ class YashanDbStatementTest {
     }
 
     // -------------------------------------------------------------------------
+    // Named parameter SQL conversion (convertToJdbcSql)
+    // -------------------------------------------------------------------------
+
+    @Test
+    void convertToJdbcSqlReplacesNamedParameters() {
+        String jdbcSql = YashanDbStatement.convertToJdbcSql(
+                "SELECT * FROM users WHERE name = :name AND age = :age");
+        assertThat(jdbcSql).isEqualTo("SELECT * FROM users WHERE name = ? AND age = ?");
+    }
+
+    @Test
+    void convertToJdbcSqlLeavesPositionalPlaceholdersUnchanged() {
+        String sql = "INSERT INTO t (a, b) VALUES (?, ?)";
+        assertThat(YashanDbStatement.convertToJdbcSql(sql)).isEqualTo(sql);
+    }
+
+    @Test
+    void convertToJdbcSqlSkipsStringLiterals() {
+        String jdbcSql = YashanDbStatement.convertToJdbcSql(
+                "SELECT ':notAParam' AS x, :realParam FROM t");
+        assertThat(jdbcSql).isEqualTo("SELECT ':notAParam' AS x, ? FROM t");
+    }
+
+    @Test
+    void convertToJdbcSqlHandlesMixedPlaceholders() {
+        String jdbcSql = YashanDbStatement.convertToJdbcSql(
+                "INSERT INTO t (a, b, c) VALUES (?, :name, ?)");
+        assertThat(jdbcSql).isEqualTo("INSERT INTO t (a, b, c) VALUES (?, ?, ?)");
+    }
+
+    @Test
+    void convertToJdbcSqlHandlesUnderscoreInName() {
+        String jdbcSql = YashanDbStatement.convertToJdbcSql(
+                "SELECT * FROM t WHERE first_name = :first_name");
+        assertThat(jdbcSql).isEqualTo("SELECT * FROM t WHERE first_name = ?");
+    }
+
+    @Test
+    void convertToJdbcSqlHandlesEscapedQuotesInLiterals() {
+        // SQL standard: '' inside a single-quoted string is an escaped single quote
+        String jdbcSql = YashanDbStatement.convertToJdbcSql(
+                "SELECT * FROM t WHERE name = 'O''Brien' AND id = :id");
+        assertThat(jdbcSql).isEqualTo("SELECT * FROM t WHERE name = 'O''Brien' AND id = ?");
+    }
+
+    @Test
+    void convertToJdbcSqlHandlesNoParameters() {
+        String sql = "SELECT 1 FROM dual";
+        assertThat(YashanDbStatement.convertToJdbcSql(sql)).isEqualTo(sql);
+    }
+
+    @Test
+    void namedParameterBindingUsesConvertedSql() throws SQLException {
+        // Verify that the PreparedStatement is created with '?' instead of ':name'
+        // so that the driver uses a true bind variable.
+        when(mockPreparedStatement.execute()).thenReturn(false);
+        when(mockPreparedStatement.getLargeUpdateCount()).thenReturn(1L);
+
+        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
+        when(mockJdbcConnection.prepareStatement(sqlCaptor.capture())).thenReturn(mockPreparedStatement);
+
+        YashanDbStatement stmt = new YashanDbStatement(mockConnection,
+                "INSERT INTO t (a) VALUES (:val)");
+        stmt.bind("val", 42);
+
+        Flux.from(stmt.execute()).blockLast();
+
+        // The SQL passed to JDBC must use '?' not ':val'
+        assertThat(sqlCaptor.getValue()).isEqualTo("INSERT INTO t (a) VALUES (?)");
+        verify(mockPreparedStatement).setInt(1, 42);
+    }
+
+    // -------------------------------------------------------------------------
     // Named parameter parsing
     // -------------------------------------------------------------------------
 
