@@ -282,7 +282,9 @@ public final class YashanDbStatement implements Statement {
             }
             return results;
         } catch (SQLException e) {
-            try { ps.close(); } catch (SQLException ignored) {}
+            try { ps.close(); } catch (SQLException closeEx) {
+                log.debug("Failed to close PreparedStatement after batch execution error", closeEx);
+            }
             throw e;
         }
     }

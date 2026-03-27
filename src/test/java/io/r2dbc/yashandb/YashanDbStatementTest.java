@@ -4,6 +4,7 @@ import io.r2dbc.spi.Result;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Flux;
@@ -12,6 +13,7 @@ import reactor.test.StepVerifier;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.util.List;
 import java.util.Map;
 
@@ -120,8 +122,15 @@ class YashanDbStatementTest {
 
         verify(mockPreparedStatement, times(2)).addBatch();
         verify(mockPreparedStatement, times(1)).executeBatch();
-        // Both rows should have called setNull (with their respective SQL types)
-        verify(mockPreparedStatement, times(2)).setNull(anyInt(), anyInt());
+
+        // Capture the SQL type constants actually passed to setNull() and verify
+        // that each batch entry's null type is preserved independently.
+        ArgumentCaptor<Integer> jdbcIndexCaptor = ArgumentCaptor.forClass(Integer.class);
+        ArgumentCaptor<Integer> sqlTypeCaptor = ArgumentCaptor.forClass(Integer.class);
+        verify(mockPreparedStatement, times(2)).setNull(jdbcIndexCaptor.capture(), sqlTypeCaptor.capture());
+
+        List<Integer> capturedTypes = sqlTypeCaptor.getAllValues();
+        assertThat(capturedTypes).containsExactlyInAnyOrder(Types.VARCHAR, Types.INTEGER);
     }
 
     // -------------------------------------------------------------------------
