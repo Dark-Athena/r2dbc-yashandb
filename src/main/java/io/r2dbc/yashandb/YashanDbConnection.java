@@ -77,7 +77,7 @@ public final class YashanDbConnection implements Connection {
 
         java.sql.Connection jdbcConn = DriverManager.getConnection(url, props);
         // Disable auto-commit by default so that R2DBC transaction semantics apply
-        jdbcConn.setAutoCommit(true);
+        jdbcConn.setAutoCommit(false);
         YashanDbConnectionMetadata metadata = YashanDbConnectionMetadata.fromJdbc(jdbcConn.getMetaData());
         return new YashanDbConnection(jdbcConn, configuration, metadata);
     }
