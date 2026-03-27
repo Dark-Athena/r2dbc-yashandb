@@ -57,8 +57,14 @@ public final class YashanDbStatement implements Statement {
     private final List<Map<Integer, Object>> bindings = new ArrayList<>();
     /** Bindings for the current (not-yet-added) row. */
     private Map<Integer, Object> currentBindings = new HashMap<>();
-    /** Null-type overrides: index -> SQL type constant from {@link Types}. */
-    private final Map<Integer, Integer> nullTypes = new HashMap<>();
+
+    /**
+     * Sentinel value stored in the bindings map for SQL NULL parameters.
+     * Carries the JDBC {@link Types} constant so that null-type information is
+     * kept together with each individual batch entry rather than in a separate
+     * shared map (which would be overwritten by later {@link #add()} calls).
+     */
+    private record NullValue(int sqlType) {}
 
     /** Whether to return generated keys. */
     private boolean returnGeneratedValues = false;
@@ -145,8 +151,7 @@ public final class YashanDbStatement implements Statement {
         if (index < 0 || index >= getParameterCount()) {
             throw new IndexOutOfBoundsException("Parameter index " + index + " out of range");
         }
-        currentBindings.put(index, null);
-        nullTypes.put(index, toSqlType(type));
+        currentBindings.put(index, new NullValue(toSqlType(type)));
         return this;
     }
 
@@ -157,8 +162,7 @@ public final class YashanDbStatement implements Statement {
         }
         Objects.requireNonNull(type, "type must not be null");
         int index = resolveParamIndex(name);
-        currentBindings.put(index, null);
-        nullTypes.put(index, toSqlType(type));
+        currentBindings.put(index, new NullValue(toSqlType(type)));
         return this;
     }
 
@@ -176,7 +180,6 @@ public final class YashanDbStatement implements Statement {
         }
         bindings.add(new HashMap<>(currentBindings));
         currentBindings = new HashMap<>();
-        nullTypes.clear();
         return this;
     }
 
@@ -207,13 +210,6 @@ public final class YashanDbStatement implements Statement {
                     "Not all parameters have been bound before execute(). Expected " + total
                     + " bindings but only " + currentBindings.size() + " were provided.");
         }
-        // Trailing add(): bindings has entries but currentBindings is empty and has parameters
-        // This means add() was called but no new bindings were provided for the next batch.
-        if (total > 0 && !bindings.isEmpty() && currentBindings.isEmpty()) {
-            IllegalStateException ex = new IllegalStateException(
-                    "Trailing add() detected: add() was called but no new parameter bindings were provided.");
-            return Flux.error(ex);
-        }
         // Finalise: if there are pending bindings not yet added, treat as the last batch
         if (!currentBindings.isEmpty()) {
             bindings.add(new HashMap<>(currentBindings));
@@ -228,6 +224,16 @@ public final class YashanDbStatement implements Statement {
         bindings.clear();
         currentBindings = new HashMap<>();
 
+        // Use JDBC batch execution when there are multiple binding sets.
+        // This sends all rows to the database in a single round-trip instead of
+        // one network call per row, which is the main reason batch inserts were
+        // ~25x slower than the equivalent JDBC code.
+        if (batchCopy.size() > 1) {
+            return Mono.fromCallable(() -> executeJdbcBatch(batchCopy))
+                    .subscribeOn(Schedulers.boundedElastic())
+                    .flatMapMany(Flux::fromIterable);
+        }
+
         return Flux.fromIterable(batchCopy)
                 .concatMap(params -> executeSingle(params).subscribeOn(Schedulers.boundedElastic()));
     }
@@ -235,6 +241,51 @@ public final class YashanDbStatement implements Statement {
     // -------------------------------------------------------------------------
     // Internal helpers
     // -------------------------------------------------------------------------
+
+    /**
+     * Execute all binding sets as a single JDBC batch for maximum throughput.
+     *
+     * <p>Instead of N individual {@code execute()} calls (each a separate
+     * network round-trip), this method uses {@link PreparedStatement#addBatch()}
+     * and {@link PreparedStatement#executeBatch()} to send every row to the
+     * database in one shot.</p>
+     */
+    private List<YashanDbResult> executeJdbcBatch(List<Map<Integer, Object>> batchParams) throws SQLException {
+        log.debug("Executing SQL as JDBC batch: {} ({} rows)", sql, batchParams.size());
+        PreparedStatement ps = prepareStatement();
+        try {
+            for (Map<Integer, Object> params : batchParams) {
+                bindParameters(ps, params);
+                ps.addBatch();
+            }
+            int[] updateCounts = ps.executeBatch();
+            List<YashanDbResult> results = new ArrayList<>(updateCounts.length);
+            if (returnGeneratedValues) {
+                java.sql.ResultSet keys = ps.getGeneratedKeys();
+                // JDBC returns all generated keys in a single ResultSet; hand the
+                // statement ownership to the first result so it is closed after
+                // the keys are consumed.
+                for (int i = 0; i < updateCounts.length; i++) {
+                    long count = updateCounts[i] >= 0 ? updateCounts[i] : 0L;
+                    if (i == 0) {
+                        results.add(YashanDbResult.ofGeneratedKeys(count, keys, ps));
+                    } else {
+                        results.add(YashanDbResult.ofUpdateCount(count));
+                    }
+                }
+            } else {
+                ps.close();
+                for (int updateCount : updateCounts) {
+                    long count = updateCount >= 0 ? updateCount : 0L;
+                    results.add(YashanDbResult.ofUpdateCount(count));
+                }
+            }
+            return results;
+        } catch (SQLException e) {
+            try { ps.close(); } catch (SQLException ignored) {}
+            throw e;
+        }
+    }
 
     private Mono<YashanDbResult> executeSingle(Map<Integer, Object> params) {
         return Mono.fromCallable(() -> {
@@ -275,9 +326,8 @@ public final class YashanDbStatement implements Statement {
             int jdbcIndex = r2dbcIndex + 1; // R2DBC is 0-based, JDBC is 1-based
             Object value = entry.getValue();
 
-            if (value == null) {
-                int sqlType = nullTypes.getOrDefault(r2dbcIndex, Types.NULL);
-                ps.setNull(jdbcIndex, sqlType);
+            if (value instanceof NullValue nv) {
+                ps.setNull(jdbcIndex, nv.sqlType());
             } else {
                 setParameter(ps, jdbcIndex, value);
             }
