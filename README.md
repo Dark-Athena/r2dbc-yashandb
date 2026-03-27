@@ -23,6 +23,17 @@
 </dependency>
 ```
 
+```xml
+<!-- r2dbc-yashandb 本地 jar -->
+<dependency>
+    <groupId>com.yashandb</groupId>
+    <artifactId>r2dbc-yashandb</artifactId>
+    <version>0.1.2</version>
+    <scope>system</scope>
+    <systemPath>${project.basedir}/libs/r2dbc-yashandb-0.1.2.jar</systemPath>
+</dependency>
+```
+
 ## 快速开始
 
 ### 通过 URL 创建连接工厂
@@ -148,7 +159,7 @@ mvn clean package
 
 ### 配置测试数据库连接
 
-集成测试和 TCK 测试需要连接真实的 YashanDB 实例。连接参数从测试类路径下的 `src/test/resources/test-database.properties` 文件读取：
+集成测试和 TCK 测试需要连接真实的 YashanDB 实例。连接参数从测试类路径下的 `src/test/resources/test-database.properties` 文件读取(若文件不存在，可手动创建)：
 
 ```properties
 db.host=192.168.163.134
