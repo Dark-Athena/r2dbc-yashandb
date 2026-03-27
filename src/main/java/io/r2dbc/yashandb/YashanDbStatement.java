@@ -274,6 +274,10 @@ public final class YashanDbStatement implements Statement {
                     }
                 }
             } else {
+                // No generated keys: the statement is no longer needed after executeBatch()
+                // completes, so close it here. In the returnGeneratedValues branch above,
+                // ownership is instead transferred to the first YashanDbResult so the
+                // statement stays open until the caller finishes consuming the key ResultSet.
                 ps.close();
                 for (int updateCount : updateCounts) {
                     long count = updateCount >= 0 ? updateCount : 0L;
