@@ -320,7 +320,61 @@ class IntegrationTest {
 
     @Test
     @Order(12)
-    @DisplayName("12. Batch 执行")
+    @DisplayName("12. Statement.add() 批量插入（JDBC batch 路径）")
+    void statementAddBatch() {
+        block(connect().flatMap(conn ->
+                Mono.from(conn.createStatement(
+                                "CREATE TABLE R2DBC_STMT_BATCH_TBL (ID NUMBER(10), NAME VARCHAR2(100))")
+                        .execute())
+                        .flatMap(r -> Mono.from(r.getRowsUpdated()))
+                        // 使用 Statement.add() 一次性批量插入 5 行
+                        .then(
+                                Flux.from(conn.createStatement("INSERT INTO R2DBC_STMT_BATCH_TBL VALUES (:id, :name)")
+                                                .bind("id", 1).bind("name", "alpha").add()
+                                                .bind("id", 2).bind("name", "beta").add()
+                                                .bind("id", 3).bind("name", "gamma").add()
+                                                .bind("id", 4).bind("name", "delta").add()
+                                                .bind("id", 5).bind("name", "epsilon").add()
+                                                .execute())
+                                        .flatMap(r -> Mono.from(r.getRowsUpdated()))
+                                        .doOnNext(n -> System.out.println("[STMT BATCH INSERT] rowsUpdated=" + n))
+                                        .collectList()
+                                        .doOnNext(counts -> {
+                                            System.out.println("[STMT BATCH] update counts = " + counts);
+                                            Assertions.assertEquals(5, counts.size(),
+                                                    "Expected one Result per batch entry");
+                                            counts.forEach(c -> Assertions.assertEquals(1L, (long) c,
+                                                    "Each batch entry should report 1 row updated"));
+                                        })
+                        )
+                        // 验证全部 5 行数据已落库
+                        .thenMany(Flux.from(conn.createStatement(
+                                        "SELECT COUNT(*) AS CNT FROM R2DBC_STMT_BATCH_TBL").execute())
+                                .flatMap(r -> r.map((row, m) -> row.get("CNT", Integer.class))))
+                        .collectList()
+                        .doOnNext(c -> {
+                            System.out.println("[STMT BATCH COUNT] " + c);
+                            Assertions.assertEquals(List.of(5), c);
+                        })
+                        // 验证行内容（按 ID 排序）
+                        .thenMany(Flux.from(conn.createStatement(
+                                        "SELECT ID, NAME FROM R2DBC_STMT_BATCH_TBL ORDER BY ID").execute())
+                                .flatMap(r -> r.map((row, m) -> row.get("NAME", String.class))))
+                        .collectList()
+                        .doOnNext(names -> {
+                            System.out.println("[STMT BATCH NAMES] " + names);
+                            Assertions.assertEquals(
+                                    List.of("alpha", "beta", "gamma", "delta", "epsilon"), names);
+                        })
+                        .then(Mono.from(conn.createStatement("DROP TABLE R2DBC_STMT_BATCH_TBL").execute()))
+                        .flatMap(r -> Mono.from(r.getRowsUpdated()))
+                        .then(Mono.from(conn.close()))
+        ));
+    }
+
+    @Test
+    @Order(13)
+    @DisplayName("13. Batch 执行")
     void batch() {
         block(connect().flatMap(conn ->
                 Mono.from(conn.createStatement(
